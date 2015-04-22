@@ -1,6 +1,6 @@
 /*
   ImplementPlanter - a library for a planter
- Copyright (C) 2011-2014 J.A. Woltjer.
+ Copyright (C) 2011-2015 J.A. Woltjer
  All rights reserved.
  
  This program is free software: you can redistribute it and/or modify
@@ -22,12 +22,13 @@
 
 #include <Arduino.h>
 #include <EEPROM.h>
-#include <ConfigImplement.h>
+#include "ConfigImplementPlough.h"
+#include "VehicleGps.h"
 
 // software version of this library
-#define PLOUGH_VERSION 0.1
+#define PLOUGH_VERSION 0.11
 
-class ImplementPlanter {
+class ImplementPlough {
 private:
   //-------------
   // data members
@@ -47,37 +48,45 @@ private:
 
   // Update timer
   unsigned long update_age;
+  boolean update_flag;
 
   // Variables concerning adjust loop
+  byte mode;
   int setpoint;
   int offset;
-  byte error;
-#ifdef PWM_MAN
   byte man_pwm;
-#endif  
-#ifdef PWM_AUTO
   byte auto_pwm;
-#endif
+
+  // XTE, error and maximum correction
+  int xte;
+  byte error;
+  byte max_correction;
+
+
+  // Speed indication for shutoff
+  int speed;
 
   // PID variables
   float P;
-#ifdef PID_KP
-  int KP;
-#endif
+  
+  byte KP;
   
   // Timers for end shutoff
   int shutoff_time;
-  int shutoff_dir;
+  bool shutoff_wide;
+  bool shutoff_narrow;
   unsigned long shutoff_timer;
   
-  // Variables for adjusting ploughside
+  // Variables for adjusting ploughside and amount of shares
   boolean swap;
   byte shares;
-  byte maxcor;
 
-  //-------------------------------------------------------------
-  // private member functions implemented in ImplementPlanter.cpp
-  //-------------------------------------------------------------
+  // Objects
+  VehicleGps * gps;
+  
+  //------------------------------------------------------------
+  // private member functions implemented in ImplementPlough.cpp
+  //------------------------------------------------------------
   int getActualRotation();
   int getActualPosition();
 
@@ -85,21 +94,23 @@ private:
   void setOffset(int _correction);
 
   void readOffset();
+  
   boolean readCalibrationData();
   void printCalibrationData();
   void writeCalibrationData();
   void wipeCalibrationData();
 
 public:
-  // -----------------------------------------------------------
-  // public member functions implemented in ImplementPlanter.cpp
-  // -----------------------------------------------------------
+  // ----------------------------------------------------------
+  // public member functions implemented in ImplementPlough.cpp
+  // ----------------------------------------------------------
 
   // Constructor
-  ImplementPlough();
+  ImplementPlough(VehicleGps * _gps);
 
-  void update(int _correction, boolean _reset, int _xte);
-  void adjust(boolean _auto, int _direction);
+  void update(byte _mode, int _buttons);
+  void stop();
+  void adjust(int _direction);
   void calibrate();
 
   // ----------------------------------------------------------------
@@ -117,8 +128,8 @@ public:
   // -------
   // Getters
   // -------
-  inline boolean getSide(){
-    return digitalRead(PLOUGHSIDE_PIN);
+  inline bool getSide(){
+    return digitalRead(PLOUGHSIDE_PIN) ^ swap;
   }
   
   inline int getPosition(){
@@ -149,21 +160,27 @@ public:
     return shares;
   }
   
-  inline int GetMaxCorrection(){
-    return maxcor;
+  inline int getMaxCorrection(){
+    return max_correction;
   }
-  
+
+#ifdef PID_KP  
   inline int getKP(){
     return KP;
   }
+#endif
 
+#ifdef PWM_MAN
   inline byte getPwmMan(){
     return man_pwm;
   }
+#endif
 
+#ifdef PWM_MAN
   inline byte getPwmAuto(){
     return auto_pwm;
   }
+#endif
   
   inline byte getError(){
     return error;
@@ -183,21 +200,27 @@ public:
   inline void setShares(byte _value){
     shares = _value;
   }
-  
+
+#ifdef PID_KP  
   inline void setKP(int _value){
     KP = _value;
   }
+#endif
 
+#ifdef PWM_MAN
   inline void setPwmMan(byte _value){
     man_pwm = _value;
   }
+#endif
 
+#ifdef PWM_AUTO
   inline void setPwmAuto(byte _value){
     auto_pwm = _value;
   }
+#endif
 
-  inline void SetMaxCorrection(int _value){
-    maxcor = _value;
+  inline void setMaxCorrection(int _value){
+    max_correction = _value;
   }
 
   inline void setError(byte _value){
